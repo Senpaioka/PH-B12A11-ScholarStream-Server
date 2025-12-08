@@ -175,6 +175,104 @@ app.post('/create-scholarship', firebaseVerificationToken, verifyAdmin, async(re
 })
 
 
+app.get('/scholarships', async (req, res) => {
+  try {
+    let page = parseInt(req.query.page) || 1;
+    let limit = parseInt(req.query.limit) || 10;
+
+    let skip = (page - 1) * limit;
+
+    const cursor = scholarship_collection
+      .find({})
+      .sort({ scholarshipPostUpdateDate: -1 }) // latest first
+      .skip(skip)
+      .limit(limit);
+
+    const data = await cursor.toArray();
+    const total = await scholarship_collection.countDocuments();
+
+    res.json({
+      data,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit)
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Error fetching scholarships" });
+  }
+});
+
+
+
+// filtered scholarship
+app.get('/filtered', async (req, res) => {
+  try {
+    const sortBy = req.query.sort; 
+
+    const validSortFields = [
+      'scholarshipCategory',
+      'universityWorldRank',
+      'degree',
+      'tuitionFees'
+    ];
+
+    if (!validSortFields.includes(sortBy)) {
+      return res.status(400).send({ message: 'Invalid sort field' });
+    }
+
+    let sortOptions = {};
+
+    // Numeric ascending
+    if (sortBy === "universityWorldRank" || sortBy === "tuitionFees") {
+      sortOptions[sortBy] = 1;     // 1 = ascending
+    } 
+    // Alphabetical ascending
+    else {
+      sortOptions[sortBy] = 1;     // same 1, but for strings it sorts alphabetically
+    }
+
+    const result = await scholarship_collection
+      .find({})
+      .sort(sortOptions)
+      .toArray();
+
+    res.send(result);
+  } catch (error) {
+    console.error('Error fetching sorted scholarships:', error);
+    res.status(500).send({ message: 'Internal server error' });
+  }
+});
+
+
+// searched result
+app.get('/searched', async (req, res) => {
+  try {
+    const { q } = req.query;
+
+    if (!q) return res.status(400).send({ message: "Query is required" });
+
+    const regex = new RegExp(q, 'i'); // case-insensitive search
+
+    const results = await scholarship_collection
+      .find({
+        $or: [
+          { universityName: { $regex: regex } },
+          { scholarshipName: { $regex: regex } },
+          { universityCountry: { $regex: regex } },
+          { universityCity: { $regex: regex } },
+          { degree: { $regex: regex } }
+        ]
+      })
+      .toArray();
+
+    res.send(results);
+
+  } catch (error) {
+    console.error("Search error:", error);
+    res.status(500).send({ message: "Internal server error" });
+  }
+});
+
 
 
 //404
