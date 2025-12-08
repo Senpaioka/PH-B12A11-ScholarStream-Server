@@ -56,6 +56,26 @@ const firebaseVerificationToken = async (req, res, next) => {
 };
 
 
+// admin verify
+const verifyAdmin = async (req, res, next) => {
+  const token = req.headers.authorization?.split(" ")[1];
+
+  if (!token) return res.status(401).send({ message: "Unauthorized" });
+
+  const decoded = await admin.auth().verifyIdToken(token);
+  const user = await user_collection.findOne({ email: decoded.email });
+
+  if (user.role !== "admin") {
+    return res.status(403).send({ message: "Forbidden: Admins only" });
+  }
+
+  req.user = user;
+  next();
+};
+
+
+
+
 // log report
 app.use(async (req, res, next) => {
   console.log(`⚡ ${req.method} - ${req.path} from ${ req.host} at ⌛ ${new Date().toLocaleString()}`);
@@ -94,6 +114,7 @@ client.connect()
 // database setup
 const database = client.db('scholar-stream');
 const user_collection = database.collection('users');
+const scholarship_collection = database.collection('scholarships');
 
 
 
@@ -106,6 +127,7 @@ app.get("/", (req, res) => {
 
 
 /* API */
+
 //  user registration
 app.post("/registration",firebaseVerificationToken, async(req, res) => {
 
@@ -125,6 +147,32 @@ app.post("/registration",firebaseVerificationToken, async(req, res) => {
 });
 
 
+// check for user-role
+app.get('/users/role/:email', firebaseVerificationToken, async(req, res) => {
+  const email = req.params.email;
+  const result = await user_collection.findOne({email: email});
+  res.send(result);
+})
+
+// create scholarship post
+app.post('/create-scholarship', firebaseVerificationToken, verifyAdmin, async(req, res) => {
+  
+  try {
+      const newScholarship = req.body;
+      newScholarship.scholarshipPostDate = new Date();
+      newScholarship.scholarshipPostUpdateDate = new Date();
+
+      const result = await scholarship_collection.insertOne(newScholarship);
+
+      res.status(201).json({
+        message: "Scholarship Posted Successfully.",
+        scholarshipId: result.insertedId,
+      });
+    } catch (error) {
+      console.error("Error posting scholarship:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+})
 
 
 
