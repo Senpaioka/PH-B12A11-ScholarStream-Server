@@ -4,6 +4,7 @@ const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const admin = require('./firebaseAdmin');
 require('dotenv').config();
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 
 // middleware
@@ -273,6 +274,30 @@ app.get('/searched', async (req, res) => {
   }
 });
 
+
+// get scholarship details
+app.get('/scholarship-details/:id', firebaseVerificationToken, async (req, res) => {
+  try {
+    const scholarship_id = req.params.id;
+
+    if (!ObjectId.isValid(scholarship_id)) {
+      return res.status(400).json({ message: "Invalid scholarship ID" });
+    }
+
+    const scholarship = await scholarship_collection.findOne({
+      _id: new ObjectId(scholarship_id)
+    });
+
+    if (!scholarship) {
+      return res.status(404).json({ message: "Scholarship not found" });
+    }
+
+    res.status(200).json(scholarship);
+  } catch (error) {
+    console.error("Error fetching scholarship:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+});
 
 
 //404
