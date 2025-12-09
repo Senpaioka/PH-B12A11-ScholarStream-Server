@@ -117,6 +117,7 @@ const database = client.db('scholar-stream');
 const user_collection = database.collection('users');
 const scholarship_collection = database.collection('scholarships');
 const application_collection = database.collection('applications');
+const review_collection = database.collection('reviews');
 
 
 
@@ -459,6 +460,38 @@ app.get("/payment-history", firebaseVerificationToken, async (req, res) => {
       success: false,
       message: "Failed to load payment history.",
     });
+  }
+});
+
+
+
+// reviews
+app.post('/reviews', async (req, res) => {
+  try {
+    const review = req.body;
+    const result = await review_collection.insertOne(review);
+
+    res.json({ success: true, id: result.insertedId });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Failed to save review" });
+  }
+});
+
+
+// get reviews
+app.get("/reviews", async (req, res) => {
+  try {
+    const scholarshipId = req.query.scholarshipId;
+
+    const reviews = await review_collection
+      .find({ scholarshipId })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.json(reviews);
+  } catch (error) {
+    console.error("Fetch reviews error:", error);
+    res.status(500).json({ message: "Failed to fetch reviews" });
   }
 });
 
