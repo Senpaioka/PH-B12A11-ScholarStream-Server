@@ -300,6 +300,69 @@ app.get('/scholarship-details/:id', firebaseVerificationToken, async (req, res) 
 });
 
 
+// payment
+app.post('/payment-checkout-session', firebaseVerificationToken, async (req, res) => {
+  try {
+    const scholarshipInfo = req.body;
+
+    const amount = parseInt(scholarshipInfo.applicationFees) * 100;
+
+    const session = await stripe.checkout.sessions.create({
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            unit_amount: amount,
+            product_data: {
+              name: `Application Fee for: ${scholarshipInfo.scholarshipName}`
+            }
+          },
+          quantity: 1
+        }
+      ],
+      mode: 'payment',
+      customer_email: scholarshipInfo.userId,
+      metadata: {
+        scholarshipId: scholarshipInfo.scholarshipId,
+        scholarshipName: scholarshipInfo.scholarshipName,
+        universityName: scholarshipInfo.universityName,
+        userId: scholarshipInfo.userId
+      },
+      success_url: `${process.env.SITE_DOMAIN}/payment/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.SITE_DOMAIN}/payment/payment-cancelled`
+    });
+
+    res.status(200).send({ url: session.url });
+
+  } catch (error) {
+    console.error("Stripe error:", error);
+    res.status(500).json({ message: "Payment Session Creation Failed" });
+  }
+});
+
+
+// verify payment
+app.get('/payment/verify', firebaseVerificationToken, async (req, res) => {
+  try {
+    const sessionId = req.query.session_id;
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+    res.json({
+      sessionId: session.id,
+      amount: session.amount_total,
+      paymentStatus: session.payment_status,
+      scholarshipName: session.metadata.scholarshipName,
+      universityName: session.metadata.universityName,
+    });
+
+  } catch (error) {
+    console.error("Payment verify error:", error);
+    res.status(500).json({ message: "Failed to verify payment" });
+  }
+});
+
+
+
 //404
 app.all(/.*/, (req, res) => {
   res.status(404).json({
