@@ -116,6 +116,7 @@ client.connect()
 const database = client.db('scholar-stream');
 const user_collection = database.collection('users');
 const scholarship_collection = database.collection('scholarships');
+const application_collection = database.collection('applications');
 
 
 
@@ -345,9 +346,40 @@ app.post('/payment-checkout-session', firebaseVerificationToken, async (req, res
 app.get('/payment/verify', firebaseVerificationToken, async (req, res) => {
   try {
     const sessionId = req.query.session_id;
+    // Retrieve Stripe checkout session
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 
-    res.json({
+    // Find existing application entry
+    const existingApplication = await application_collection.findOne({
+      scholarshipId: session.metadata.scholarshipId,
+      userEmail: session.metadata.userId,
+    });
+
+    if (!existingApplication) {
+      return res.status(404).json({
+        success: false,
+        message: "Application record not found"
+      });
+    }
+
+    // Update payment status in MongoDB
+    await application_collection.updateOne(
+      {
+        _id: existingApplication._id
+      },
+      {
+        $set: {
+          paymentStatus: session.payment_status === "paid" ? "paid" : "unpaid",
+          applicationStatus: "submitted",
+          transactionId: session.id,
+          amountPaid: session.amount_total/100,
+          payment_completed: new Date()
+        }
+      }
+    );
+
+    return res.json({
+      success: true,
       sessionId: session.id,
       amount: session.amount_total,
       paymentStatus: session.payment_status,
@@ -358,6 +390,75 @@ app.get('/payment/verify', firebaseVerificationToken, async (req, res) => {
   } catch (error) {
     console.error("Payment verify error:", error);
     res.status(500).json({ message: "Failed to verify payment" });
+  }
+});
+
+
+// save payment session
+app.post('/save-payment-session', firebaseVerificationToken, async (req, res) => {
+  try {
+    const session = req.body;
+    session.session_created = new Date();
+    // Check for existing payment session
+    const isPaymentPending = await application_collection.findOne({
+      scholarshipId: session.scholarshipId,
+      userEmail: session.userEmail
+    });
+    let insertedId = null;
+
+    if (!isPaymentPending) {
+      // Insert only if no record exists
+      const result = await application_collection.insertOne(session);
+      insertedId = result.insertedId;
+    } else {
+      // Record already exists → just reuse its ID
+      insertedId = isPaymentPending._id;
+    }
+
+    // Continue rest of the flow normally
+    return res.status(201).json({
+      success: true,
+      message: "Payment session saved successfully.",
+      sessionId: insertedId
+    });
+
+  } catch (error) {
+    console.error("Error saving payment session:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error."
+    });
+  }
+});
+
+
+// GET: Payment history for a user
+app.get("/payment-history", firebaseVerificationToken, async (req, res) => {
+  try {
+    const userEmail = req.query.email;
+
+    if (!userEmail) {
+      return res.status(400).json({
+        success: false,
+        message: "User email is required.",
+      });
+    }
+
+    // Fetch all application/payment records of this user
+    const payments = await application_collection
+      .find({ userEmail })
+      .sort({ session_created: -1 }) // newest first
+      .toArray();
+
+    return res.status(200).json(payments);
+
+  } catch (error) {
+    console.error("Error fetching payment history:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load payment history.",
+    });
   }
 });
 
