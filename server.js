@@ -189,7 +189,7 @@ app.get('/users/role/:email', firebaseVerificationToken, async(req, res) => {
 })
 
 // get all users
-app.get('/users', firebaseVerificationToken, verifyAdmin, async(req, res) => {
+app.get('/users', firebaseVerificationToken, verifyAdmin, verifyModerator, async(req, res) => {
   const result = await user_collection.find().sort({ created_at : 1 }).toArray();
   res.send(result);
 })
@@ -691,7 +691,7 @@ app.get("/scholarship-reviews", firebaseVerificationToken, async (req, res) => {
 });
 
 
-// review delete (admin)
+// review delete (admin/moderator)
 app.delete("/reviews/:id", firebaseVerificationToken, async (req, res) => {
   try {
     const reviewId = req.params.id;
@@ -836,6 +836,35 @@ app.get("/applications/feedback/:email", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Failed to fetch feedbacks" });
+  }
+});
+
+
+// dashboard main-page stats 
+app.get("/dashboard-stats", firebaseVerificationToken, async (req, res) => {
+  try {
+    // Count all collections in parallel
+    const [
+      totalApplicants,
+      totalScholarships,
+      totalApplications,
+      totalReviews,
+    ] = await Promise.all([
+      application_collection.countDocuments({ paymentStatus: "paid" }),
+      scholarship_collection.countDocuments(),
+      application_collection.countDocuments(),
+      review_collection.countDocuments(),
+    ]);
+
+    res.json({
+      applicants: totalApplicants,
+      scholarships: totalScholarships,
+      applications: totalApplications,
+      reviews: totalReviews,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed to fetch dashboard stats" });
   }
 });
 
