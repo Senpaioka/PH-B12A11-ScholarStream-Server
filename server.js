@@ -245,9 +245,6 @@ app.patch("/users/role/:id", firebaseVerificationToken, verifyAdmin, async (req,
 });
 
 
-
-
-
 // create scholarship post
 app.post('/create-scholarship', firebaseVerificationToken, verifyAdmin, async(req, res) => {
   
@@ -269,6 +266,7 @@ app.post('/create-scholarship', firebaseVerificationToken, verifyAdmin, async(re
 })
 
 
+// getting all the scholarship (pagination)
 app.get('/scholarships', async (req, res) => {
   try {
     let page = parseInt(req.query.page) || 1;
@@ -293,6 +291,17 @@ app.get('/scholarships', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ message: "Error fetching scholarships" });
+  }
+});
+
+// get scholarship data for analysis
+app.get("/scholarship-analysis", firebaseVerificationToken, verifyAdmin, async (req, res) => {
+  try {
+    const scholarships = await scholarship_collection.find().toArray();
+    res.json(scholarships);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to fetch scholarships" });
   }
 });
 
@@ -389,6 +398,70 @@ app.get('/scholarship-details/:id', firebaseVerificationToken, async (req, res) 
   } catch (error) {
     console.error("Error fetching scholarship:", error);
     res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
+
+// Get all published scholarships
+app.get("/scholarships/published", firebaseVerificationToken, async (req, res) => {
+  try {
+    const scholarships = await scholarship_collection
+      .find({})
+      .sort({ scholarshipPostDate: -1 })
+      .toArray();
+    res.status(200).json(scholarships);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// Delete a scholarship
+app.delete("/scholarships/:id", firebaseVerificationToken, verifyAdmin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const result = await scholarship_collection.deleteOne({ _id: new ObjectId(id) });
+    if (result.deletedCount === 1) {
+      res.status(200).json({ success: true });
+    } else {
+      res.status(404).json({ success: false, message: "Scholarship not found" });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+
+// PATCH update a scholarship (admin only)
+app.patch("/update-scholarship/:id", firebaseVerificationToken, verifyAdmin, async (req, res) => {
+  const { id } = req.params;
+  const updateData = { ...req.body };
+
+  // Prevent _id from being updated
+  delete updateData._id;
+
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).json({ message: "Invalid scholarship ID" });
+  }
+
+  try {
+    // Optional: automatically update last modified date
+    updateData.scholarshipPostUpdateDate = new Date();
+
+    const result = await scholarship_collection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updateData }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ message: "Scholarship not found" });
+    }
+
+    res.status(200).json({ message: "Scholarship updated successfully" });
+  } catch (error) {
+    console.error("Error updating scholarship:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -569,8 +642,8 @@ app.post('/reviews', async (req, res) => {
 });
 
 
-// get reviews
-app.get("/reviews", async (req, res) => {
+// get specified reviews
+app.get("/reviews", firebaseVerificationToken, async (req, res) => {
   try {
     const scholarshipId = req.query.scholarshipId;
 
@@ -583,6 +656,60 @@ app.get("/reviews", async (req, res) => {
   } catch (error) {
     console.error("Fetch reviews error:", error);
     res.status(500).json({ message: "Failed to fetch reviews" });
+  }
+});
+
+
+// get all reviews (admin)
+app.get("/scholarship-reviews", firebaseVerificationToken, async (req, res) => {
+  try {
+    // Fetch all reviews
+    const reviews = await review_collection.find().sort({ createdAt: -1 }).toArray();
+
+    // Fetch scholarship titles for each review
+    const reviewsWithScholarship = await Promise.all(
+      reviews.map(async (review) => {
+        const scholarship = await scholarship_collection.findOne({
+          _id: new ObjectId(review.scholarshipId),
+        });
+
+        return {
+          ...review,
+          scholarshipName: scholarship ? scholarship.scholarshipName : "Unknown Scholarship",
+          universityName: scholarship ? scholarship.universityName : "Unknown University",
+          universityCity: scholarship ? scholarship.universityCity : "Unknown City",
+          universityCountry: scholarship ? scholarship.universityCountry : "Unknown Country",
+        };
+      })
+    );
+
+    res.status(200).json(reviewsWithScholarship);
+  } catch (err) {
+    console.error("Error fetching reviews:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+
+// review delete (admin)
+app.delete("/reviews/:id", firebaseVerificationToken, async (req, res) => {
+  try {
+    const reviewId = req.params.id;
+
+    if (!ObjectId.isValid(reviewId)) {
+      return res.status(400).json({ message: "Invalid review ID" });
+    }
+
+    const result = await review_collection.deleteOne({ _id: new ObjectId(reviewId) });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ message: "Review not found" });
+    }
+
+    res.status(200).json({ message: "Review deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting review:", error);
+    res.status(500).json({ message: "Internal Server Error" });
   }
 });
 
@@ -642,6 +769,33 @@ app.delete("/applications/:scholarshipId", firebaseVerificationToken, async (req
   }
 });
 
+
+// Get all applications paid/unpaid
+app.get("/application-analysis", verifyAdmin, async (req, res) => {
+  try {
+    const applications = await application_collection.find().toArray();
+    res.json(applications);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to fetch applications" });
+  }
+});
+
+
+// applicant list
+app.get("/applications/paid", firebaseVerificationToken, async (req, res) => {
+  try {
+    const paidApplicants = await application_collection
+      .find({ paymentStatus: "paid" })
+      .sort({ session_created: -1 })
+      .toArray();
+
+    res.status(200).json(paidApplicants);
+  } catch (error) {
+    console.error("Error fetching paid applicants:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
 
 
 
