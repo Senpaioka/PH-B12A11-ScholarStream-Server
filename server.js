@@ -74,6 +74,37 @@ const verifyAdmin = async (req, res, next) => {
   next();
 };
 
+// moderator verify
+const verifyModerator = async (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+
+    if (!token) {
+      return res.status(401).send({ message: "Unauthorized: No token provided" });
+    }
+    // Verify Firebase ID token
+    const decoded = await admin.auth().verifyIdToken(token);
+    // Find user in MongoDB
+    const user = await user_collection.findOne({ email: decoded.email });
+
+    if (!user) {
+      return res.status(404).send({ message: "User account not found" });
+    }
+
+    // Check if the user is a moderator or admin
+    if (user.role !== "moderator") {
+      return res.status(403).send({ message: "Forbidden: Moderators only" });
+    }
+    // Attach user data to req object for later use
+    req.user = user;
+    next();
+
+  } catch (error) {
+    console.error("verifyModerator error:", error);
+    return res.status(500).send({ message: "Internal server error" });
+  }
+};
+
 
 
 
@@ -156,6 +187,66 @@ app.get('/users/role/:email', firebaseVerificationToken, async(req, res) => {
   const result = await user_collection.findOne({email: email});
   res.send(result);
 })
+
+// get all users
+app.get('/users', firebaseVerificationToken, verifyAdmin, async(req, res) => {
+  const result = await user_collection.find().sort({ created_at : 1 }).toArray();
+  res.send(result);
+})
+
+// change user role
+app.patch("/users/role/:id", firebaseVerificationToken, verifyAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { role } = req.body;
+
+    // Validate new role
+    const validRoles = ["student", "moderator", "admin"];
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({ message: "Invalid role value" });
+    }
+
+    // The logged-in user's email from Firebase token
+    const requesterEmail = req.user?.email;
+
+    if (!requesterEmail) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    // Check if the requester is an admin
+    const requesterAccount = await user_collection.findOne({
+      email: requesterEmail,
+    });
+
+    if (!requesterAccount || requesterAccount.role !== "admin") {
+      return res.status(403).json({
+        message: "Forbidden: Only admins can update user roles",
+      });
+    }
+
+    // Update the user's role
+    const result = await user_collection.updateOne(
+      { _id: new ObjectId(userId) },
+      { $set: { role } }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.status(200).json({
+      message: "User role updated successfully",
+      updatedRole: role,
+    });
+  } catch (error) {
+    console.error("Error updating role:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+
+
+
 
 // create scholarship post
 app.post('/create-scholarship', firebaseVerificationToken, verifyAdmin, async(req, res) => {
