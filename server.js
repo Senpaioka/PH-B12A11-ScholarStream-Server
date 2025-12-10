@@ -496,6 +496,63 @@ app.get("/reviews", async (req, res) => {
 });
 
 
+// GET /applications
+app.get("/applications", firebaseVerificationToken, async (req, res) => {
+  try {
+    // The user's email comes from the verified Firebase token
+    const userEmail = req.user.email;
+
+    if (!userEmail) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    // Fetch all applications for the logged-in user
+    const applications = await application_collection
+      .find({ userEmail })
+      .sort({ session_created: -1 }) // newest first
+      .toArray();
+
+    res.status(200).json(applications);
+  } catch (error) {
+    console.error("Error fetching applications:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+
+// delete application
+app.delete("/applications/:scholarshipId", firebaseVerificationToken, async (req, res) => {
+  try {
+    const userEmail = req.user.email;
+    const scholarshipId = req.params.scholarshipId;
+
+    if (!userEmail) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    // Only delete If application belongs to logged-in user & is pending
+    const result = await application_collection.deleteOne({
+      userEmail,
+      scholarshipId,
+      applicationStatus: "pending"
+    });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({
+        message: "Application not found or cannot be deleted."
+      });
+    }
+
+    res.status(200).json({ message: "Application deleted successfully" });
+
+  } catch (error) {
+    console.error("Error deleting application:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+
+
 
 //404
 app.all(/.*/, (req, res) => {
