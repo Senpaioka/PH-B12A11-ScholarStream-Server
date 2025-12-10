@@ -105,7 +105,40 @@ const verifyModerator = async (req, res, next) => {
   }
 };
 
+// admin or moderator
+const verifyAdminOrModerator = async (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
 
+    if (!token) {
+      return res.status(401).send({ message: "Unauthorized" });
+    }
+
+    // Verify Firebase token
+    const decoded = await admin.auth().verifyIdToken(token);
+
+    // Fetch user from DB
+    const user = await user_collection.findOne({ email: decoded.email });
+
+    if (!user) {
+      return res.status(404).send({ message: "User not found" });
+    }
+
+    // Allow only admin or moderator
+    if (user.role !== "admin" && user.role !== "moderator") {
+      return res.status(403).send({
+        message: "Forbidden: Admin or Moderator only",
+      });
+    }
+    // Attach user data to request object
+    req.user = user;
+
+    next();
+  } catch (error) {
+    console.error("verifyAdminOrModerator Error:", error);
+    res.status(500).send({ message: "Internal Server Error" });
+  }
+};
 
 
 // log report
@@ -189,7 +222,7 @@ app.get('/users/role/:email', firebaseVerificationToken, async(req, res) => {
 })
 
 // get all users
-app.get('/users', firebaseVerificationToken, verifyAdmin, verifyModerator, async(req, res) => {
+app.get('/users', firebaseVerificationToken, verifyAdmin, async(req, res) => {
   const result = await user_collection.find().sort({ created_at : 1 }).toArray();
   res.send(result);
 })
@@ -293,6 +326,7 @@ app.get('/scholarships', async (req, res) => {
     res.status(500).json({ message: "Error fetching scholarships" });
   }
 });
+
 
 // get scholarship data for analysis
 app.get("/scholarship-analysis", firebaseVerificationToken, verifyAdmin, async (req, res) => {
@@ -403,7 +437,7 @@ app.get('/scholarship-details/:id', firebaseVerificationToken, async (req, res) 
 
 
 // Get all published scholarships
-app.get("/scholarships/published", firebaseVerificationToken, async (req, res) => {
+app.get("/scholarships/published", firebaseVerificationToken, verifyAdminOrModerator, async (req, res) => {
   try {
     const scholarships = await scholarship_collection
       .find({})
@@ -433,8 +467,8 @@ app.delete("/scholarships/:id", firebaseVerificationToken, verifyAdmin, async (r
 });
 
 
-// PATCH update a scholarship (admin only)
-app.patch("/update-scholarship/:id", firebaseVerificationToken, verifyAdmin, async (req, res) => {
+// PATCH update a scholarship (admin/moderator only)
+app.patch("/update-scholarship/:id", firebaseVerificationToken, verifyAdminOrModerator, async (req, res) => {
   const { id } = req.params;
   const updateData = { ...req.body };
 
@@ -630,7 +664,7 @@ app.get("/payment-history", firebaseVerificationToken, async (req, res) => {
 
 
 // reviews
-app.post('/reviews', async (req, res) => {
+app.post('/reviews', firebaseVerificationToken, async (req, res) => {
   try {
     const review = req.body;
     const result = await review_collection.insertOne(review);
@@ -661,7 +695,7 @@ app.get("/reviews", firebaseVerificationToken, async (req, res) => {
 
 
 // get all reviews (admin)
-app.get("/scholarship-reviews", firebaseVerificationToken, async (req, res) => {
+app.get("/scholarship-reviews", firebaseVerificationToken, verifyAdminOrModerator, async (req, res) => {
   try {
     // Fetch all reviews
     const reviews = await review_collection.find().sort({ createdAt: -1 }).toArray();
@@ -692,7 +726,7 @@ app.get("/scholarship-reviews", firebaseVerificationToken, async (req, res) => {
 
 
 // review delete (admin/moderator)
-app.delete("/reviews/:id", firebaseVerificationToken, async (req, res) => {
+app.delete("/reviews/:id", firebaseVerificationToken, verifyAdminOrModerator, async (req, res) => {
   try {
     const reviewId = req.params.id;
 
@@ -771,7 +805,7 @@ app.delete("/applications/:scholarshipId", firebaseVerificationToken, async (req
 
 
 // Get all applications paid/unpaid
-app.get("/application-analysis", verifyAdmin, async (req, res) => {
+app.get("/application-analysis", firebaseVerificationToken, verifyAdmin, async (req, res) => {
   try {
     const applications = await application_collection.find().toArray();
     res.json(applications);
@@ -783,7 +817,7 @@ app.get("/application-analysis", verifyAdmin, async (req, res) => {
 
 
 // applicant list
-app.get("/applications/paid", firebaseVerificationToken, async (req, res) => {
+app.get("/applications/paid", firebaseVerificationToken, verifyAdminOrModerator, async (req, res) => {
   try {
     const paidApplicants = await application_collection
       .find({ paymentStatus: "paid" })
@@ -800,7 +834,7 @@ app.get("/applications/paid", firebaseVerificationToken, async (req, res) => {
 
 
 // Update feedback for an application
-app.patch("/applications/feedback/:id",firebaseVerificationToken, verifyAdmin, async (req, res) => {
+app.patch("/applications/feedback/:id",firebaseVerificationToken, verifyAdminOrModerator, async (req, res) => {
   try {
     const { id } = req.params;
     const { feedback } = req.body;
@@ -823,7 +857,7 @@ app.patch("/applications/feedback/:id",firebaseVerificationToken, verifyAdmin, a
 
 
 // Get feedbacks for a specific applicant by email
-app.get("/applications/feedback/:email", async (req, res) => {
+app.get("/applications/feedback/:email", firebaseVerificationToken, verifyAdminOrModerator, async (req, res) => {
   try {
     const { email } = req.params;
 
@@ -876,4 +910,4 @@ app.all(/.*/, (req, res) => {
     status: 404,
     error: "API not found",
   });
-});
+});       
