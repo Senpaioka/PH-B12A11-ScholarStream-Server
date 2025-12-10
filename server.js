@@ -799,6 +799,48 @@ app.get("/applications/paid", firebaseVerificationToken, async (req, res) => {
 
 
 
+// Update feedback for an application
+app.patch("/applications/feedback/:id",firebaseVerificationToken, verifyAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { feedback } = req.body;
+
+    const result = await application_collection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { feedback } }
+    );
+
+    if (result.modifiedCount === 0) {
+      return res.status(404).json({ message: "Application not found or feedback unchanged" });
+    }
+
+    res.json({ message: "Feedback updated successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to update feedback" });
+  }
+});
+
+
+// Get feedbacks for a specific applicant by email
+app.get("/applications/feedback/:email", async (req, res) => {
+  try {
+    const { email } = req.params;
+
+    const feedbacks = await application_collection
+      .find({ userEmail: email, feedback: { $ne: null } })
+      .sort({ session_created: -1 })
+      .toArray();
+
+    res.json(feedbacks);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to fetch feedbacks" });
+  }
+});
+
+
+
 //404
 app.all(/.*/, (req, res) => {
   res.status(404).json({
