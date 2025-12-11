@@ -835,7 +835,7 @@ app.get("/applications/paid", firebaseVerificationToken, verifyAdminOrModerator,
 
 
 // Update feedback for an application
-app.patch("/applications/feedback/:id",firebaseVerificationToken, async (req, res) => {
+app.patch("/applications/feedback/:id",firebaseVerificationToken, verifyAdminOrModerator async (req, res) => {
   try {
     const { id } = req.params;
     const { feedback } = req.body;
@@ -858,7 +858,7 @@ app.patch("/applications/feedback/:id",firebaseVerificationToken, async (req, re
 
 
 // Get feedbacks for a specific applicant by email
-app.get("/applications/feedback/:email", firebaseVerificationToken, verifyAdminOrModerator, async (req, res) => {
+app.get("/applications/feedback/:email", firebaseVerificationToken, async (req, res) => {
   try {
     const { email } = req.params;
 
